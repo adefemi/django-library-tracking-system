@@ -5,13 +5,14 @@ from .serializers import AuthorSerializer, BookSerializer, MemberSerializer, Loa
 from rest_framework.decorators import action
 from django.utils import timezone
 from .tasks import send_loan_notification
+from datetime import timedelta
 
 class AuthorViewSet(viewsets.ModelViewSet):
     queryset = Author.objects.all()
     serializer_class = AuthorSerializer
 
 class BookViewSet(viewsets.ModelViewSet):
-    queryset = Book.objects.all()
+    queryset = Book.objects.all().select_related("author") # this should optimize the author info book retrieval
     serializer_class = BookSerializer
 
     @action(detail=True, methods=['post'])
@@ -52,3 +53,27 @@ class MemberViewSet(viewsets.ModelViewSet):
 class LoanViewSet(viewsets.ModelViewSet):
     queryset = Loan.objects.all()
     serializer_class = LoanSerializer
+
+    @action(detail=True, methods=["post"], url_path="/(<loan_id>)/extend_due_date")
+    def extend_load(self, request, loan_id):
+        loan = loan.objects.filter(id=loan_id, due_date__gte=timezone.now())
+        if not loan:
+            return Response({
+                "error": "Loan id is invalid or load has expired"
+            }, status=400)
+        
+        additional_days = request.data.get("additional_days", None)
+        if not additional_days:
+            return Response({
+                "error": "You did not provide additional date to extend by"
+            }, status=400)
+        
+        active_loan = loan[0]
+        new_time = active_loan.due_date + timedelta(days=additional_days)
+        
+        active_loan.due_date = new_time
+        active_loan.save()
+
+        return Response(self.serializer_class(data=active_loan).data, status=200)
+        
+
